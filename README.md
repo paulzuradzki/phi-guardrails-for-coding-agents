@@ -2,7 +2,7 @@
 
 Local Postgres simulation of PHI data (CMS SYNPUF sample files) for testing
 LLM guardrails. Two database roles: `human001` (unrestricted operator) and
-`agent001` (restricted — to be defined).
+`agent001` (restricted, to be defined).
 
 No data is committed to this repo; everything below reproduces it locally.
 

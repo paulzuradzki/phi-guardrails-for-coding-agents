@@ -1,25 +1,25 @@
-# Agent Instructions — phi-guardrails
+# Agent Instructions: phi-guardrails
 
 Local harness for simulating PHI in Postgres to test LLM guardrails.
-Data is CMS SYNPUF sample files (synthetic, public) — but treat `data/` as
+Data is CMS SYNPUF sample files (synthetic, public), but treat `data/` as
 sensitive anyway: it is gitignored and must never be committed.
 
 ## Layout
 
-- `src/phi_guardrails/` — package
-  - `config.py` — env/.env config (`DatabaseConfig`, `load_config()`)
-  - `db.py` — psycopg connection helper (role comes from `.env`)
-  - `fetch.py` — download + extract the CMS sample zips into `data/`
-  - `load.py` — bulk-load CSVs into Postgres via Polars
-- `tests/` — pytest unit tests (no live DB required)
-- `scripts/init/` — SQL run once by the Postgres container on first start
-- `docker-compose.yml` — Postgres 16 with `claims_db`, human + agent roles
-- `justfile` — helper commands
-- `notebooks/dev.ipynb` — raw-SQL exploration notebook
+- `src/phi_guardrails/`: package
+  - `config.py`: env/.env config (`DatabaseConfig`, `load_config()`)
+  - `db.py`: psycopg connection helper (role comes from `.env`)
+  - `fetch.py`: download + extract the CMS sample zips into `data/`
+  - `load.py`: bulk-load CSVs into Postgres via Polars
+- `tests/`: pytest unit tests (no live DB required)
+- `scripts/init/`: SQL run once by the Postgres container on first start
+- `docker-compose.yml`: Postgres 16 with `claims_db`, human + agent roles
+- `justfile`: helper commands
+- `notebooks/dev.ipynb`: raw-SQL exploration notebook
 
 ## Commands (just)
 
-Always use the justfile recipes — never invoke `uv run pytest` / `uv run ruff`
+Always use the justfile recipes; never invoke `uv run pytest` / `uv run ruff`
 manually. Drop to raw `uv run pytest <path>::<test>` only when you need to
 target a specific test.
 
@@ -43,8 +43,8 @@ just db-counts           # row counts for both tables
 - `.env` (gitignored) holds all DB creds; `.env.example` is the template.
 - The app connects via a single `DATABASE_URL`. The active role is toggled by
   swapping that value between the human and agent lines in `.env`:
-  - `human001` / `fake-human-password` — unrestricted operator (owns the DB)
-  - `agent001` / `fake-agent-password` — restricted role for guardrail work
+  - `human001` / `fake-human-password`: unrestricted operator (owns the DB)
+  - `agent001` / `fake-agent-password`: restricted role for guardrail work
 - `DB_USER`, `DB_PASSWORD`, `AGENT_DB_USER`, `AGENT_DB_PASSWORD` in `.env`
   exist only to seed the Docker container (compose + init script); the
   Python code never reads them.
@@ -52,7 +52,7 @@ just db-counts           # row counts for both tables
   credentials. Never dump the environment.
 - Do not elaborate on agent permissions until the owner defines the policy.
 
-## PHI / PII in version control — NEVER
+## PHI / PII in version control: NEVER
 
 - `data/` is gitignored and must never be committed, even though the CMS
   SYNPUF sample is synthetic. Treat it as real PHI.
@@ -68,5 +68,5 @@ just db-counts           # row counts for both tables
   tests with pytest, lint with ruff (line length 100, rules E/F/I/UP/B/SIM/W).
 - Keep things simple: stdlib + psycopg + polars + python-dotenv. No ORM.
 - Column names in `scripts/init/02-create-schema.sql` are the lowercased CSV
-  headers — keep them in sync if the schema changes.
+  headers; keep them in sync if the schema changes.
 - New code needs unit tests. Tests must not require a running Postgres.

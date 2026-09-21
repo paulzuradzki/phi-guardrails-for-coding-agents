@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:16
     container_name: phi-guardrails-postgres
-    # Creds come from .env — nothing is hardcoded in this file.
+    # Creds come from .env; nothing is hardcoded in this file.
     # POSTGRES_USER/POSTGRES_PASSWORD create the superuser (human001) and
     # POSTGRES_DB creates the database.
     environment:
