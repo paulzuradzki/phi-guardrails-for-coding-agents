@@ -9,16 +9,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 import polars as pl
-import sqlalchemy
 from psycopg import sql
 
 from .config import load_config
 from .db import connect
 from .fetch import DATA_DIR
+
+log = logging.getLogger(__name__)
 
 # table name -> CSV filename
 TABLES: dict[str, str] = {
@@ -37,22 +39,19 @@ def read_csv(csv_path: Path) -> pl.DataFrame:
     return df.rename({c: c.lower() for c in df.columns})
 
 
-def load_table(table: str, df: pl.DataFrame, conn, dsn: str) -> int:
-    """Write a Polars DataFrame into a table. Returns total rows in table."""
-    # polars' sqlalchemy engine needs a SQLAlchemy engine. Swap the scheme in
-    # the DSN so SQLAlchemy uses psycopg2 as its driver.
-    sa_url = dsn.replace("postgresql://", "postgresql+psycopg2://", 1)
-    sa_conn = sqlalchemy.create_engine(sa_url, pool_pre_ping=True)
-    df.write_database(
-        table,
-        sa_conn,
-        if_table_exists="append",
-        engine="sqlalchemy",
-        engine_options={"method": "multi", "chunksize": 5000},
-    )
-    with conn.cursor() as cur:
-        cur.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(table)))
-        return cur.fetchone()["count"]
+def load_table(table: str, df: pl.DataFrame, conn) -> int:
+    """Stream a DataFrame into a table with COPY on *this* connection.
+
+    Returns the number of rows written. Using the caller's connection keeps
+    a TRUNCATE + load in one transaction and avoids a second connection
+    blocking on locks the first one holds.
+    """
+    columns = sql.SQL(", ").join(sql.Identifier(c) for c in df.columns)
+    stmt = sql.SQL("COPY {} ({}) FROM STDIN").format(sql.Identifier(table), columns)
+    with conn.cursor() as cur, cur.copy(stmt) as copy:
+        for row in df.iter_rows():
+            copy.write_row(row)
+    return df.height
 
 
 def main() -> int:
@@ -65,6 +64,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     cfg = load_config()
     tables = [args.table] if args.table else list(TABLES)
 
@@ -74,13 +74,10 @@ def main() -> int:
             if args.truncate:
                 with conn.cursor() as cur:
                     cur.execute(sql.SQL("TRUNCATE {}").format(sql.Identifier(table)))
-                # load_table writes over a *separate* connection; an uncommitted
-                # TRUNCATE holds an ACCESS EXCLUSIVE lock and that write would
-                # block forever.
-                conn.commit()
             df = read_csv(csv_path)
-            n = load_table(table, df, conn, cfg.dsn)
-            print(f"{table}: {n} rows")
+            n = load_table(table, df, conn)
+            conn.commit()  # each table is its own transaction
+            log.info("%s: loaded %d rows", table, n)
     return 0
 
 
