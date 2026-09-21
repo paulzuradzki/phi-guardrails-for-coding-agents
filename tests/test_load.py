@@ -47,6 +47,8 @@ def test_load_table_roundtrip(live_db, tmp_path):
     df = load.read_csv(csv_path)
     with live_db.cursor() as cur:
         cur.execute("TRUNCATE beneficiary")
+    # Release the TRUNCATE lock: load_table inserts over a second connection.
+    live_db.commit()
 
     # Act
     n = load.load_table("beneficiary", df, live_db, FAKE_DSN)

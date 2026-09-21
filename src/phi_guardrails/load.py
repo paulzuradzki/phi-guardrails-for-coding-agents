@@ -74,6 +74,10 @@ def main() -> int:
             if args.truncate:
                 with conn.cursor() as cur:
                     cur.execute(sql.SQL("TRUNCATE {}").format(sql.Identifier(table)))
+                # load_table writes over a *separate* connection; an uncommitted
+                # TRUNCATE holds an ACCESS EXCLUSIVE lock and that write would
+                # block forever.
+                conn.commit()
             df = read_csv(csv_path)
             n = load_table(table, df, conn, cfg.dsn)
             print(f"{table}: {n} rows")

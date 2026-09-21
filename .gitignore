@@ -15,3 +15,6 @@ uv.lock.bak
 
 # Misc
 .DS_Store
+
+# Local-only docs, never commit
+.docs/
