@@ -1,0 +1,14 @@
+- repo: local
+  hooks:
+    - id: ruff-check
+      name: ruff (lint)
+      entry: uv run ruff check --fix
+      language: system
+      files: ^(src|tests)/
+      pass_filenames: true
+    - id: ruff-format
+      name: ruff (format)
+      entry: uv run ruff format
+      language: system
+      files: ^(src|tests)/
+      pass_filenames: true

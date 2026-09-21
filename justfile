@@ -1,5 +1,3 @@
-set -euo pipefail
-
 default: help
 
 ## Run unit tests

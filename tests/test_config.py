@@ -1,26 +1,59 @@
+import pytest
+
 from phi_guardrails.config import DatabaseConfig, load_config
+
+FAKE_DSN = "postgresql://human001:fake-human-password@localhost:5432/claims_db"
+
+
+@pytest.fixture
+def cfg() -> DatabaseConfig:
+    """Config with a fake DSN; never connects anywhere."""
+    return DatabaseConfig(dsn=FAKE_DSN)
 
 
 def test_dsn_passthrough(cfg: DatabaseConfig):
-    assert (
-        cfg.dsn == "postgresql://human001:fake-human-password@localhost:5432/claims_db"
-    )
+    # Arrange
+    dsn = cfg.dsn
+
+    # Act
+    # (property access is the act; nothing else to do)
+
+    # Assert
+    assert dsn == FAKE_DSN
 
 
-def test_load_config_reads_env(monkeypatch):
-    monkeypatch.setenv(
-        "DATABASE_URL", "postgresql://agent001:fake-agent-password@localhost:5432/claims_db"
-    )
-    assert (
-        load_config().dsn
-        == "postgresql://agent001:fake-agent-password@localhost:5432/claims_db"
-    )
+@pytest.mark.parametrize(
+    ("env_value", "expected"),
+    [
+        (
+            "postgresql://agent001:fake-agent-password@localhost:5432/claims_db",
+            "postgresql://agent001:fake-agent-password@localhost:5432/claims_db",
+        ),
+        (
+            "postgres://human001:fake-human-password@localhost:5432/claims_db",
+            "postgres://human001:fake-human-password@localhost:5432/claims_db",
+        ),
+    ],
+)
+def test_load_config_reads_env(monkeypatch, env_value, expected):
+    # Arrange
+    monkeypatch.setenv("DATABASE_URL", env_value)
+
+    # Act
+    cfg = load_config()
+
+    # Assert
+    assert cfg.dsn == expected
 
 
-def test_load_config_rejects_bad_scheme(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "mysql://user:pass@localhost/db")
-    try:
+@pytest.mark.parametrize(
+    "bad_value",
+    ["mysql://user:pass@localhost/db", "sqlite:///local.db", "http://localhost"],
+)
+def test_load_config_rejects_bad_scheme(monkeypatch, bad_value):
+    # Arrange
+    monkeypatch.setenv("DATABASE_URL", bad_value)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="postgresql"):
         load_config()
-        raise AssertionError("expected ValueError")
-    except ValueError as e:
-        assert "postgresql" in str(e)

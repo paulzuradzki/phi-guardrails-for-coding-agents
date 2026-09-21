@@ -19,6 +19,10 @@ sensitive anyway: it is gitignored and must never be committed.
 
 ## Commands (just)
 
+Always use the justfile recipes — never invoke `uv run pytest` / `uv run ruff`
+manually. Drop to raw `uv run pytest <path>::<test>` only when you need to
+target a specific test.
+
 ```bash
 just help                # list all recipes
 just test                # pytest
