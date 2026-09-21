@@ -28,6 +28,11 @@ db-down:
 db-reset:
 	docker compose down -v
 
+## Create the claims_test DB on an already-running container (idempotent)
+db-init-test:
+	docker compose exec -T postgres psql -U human001 -d claims_db -v ON_ERROR_STOP=1 \
+		-f /docker-entrypoint-initdb.d/03-create-test-db.sql
+
 ## Download + extract CMS sample CSVs into data/
 fetch:
 	uv run python -m phi_guardrails.fetch

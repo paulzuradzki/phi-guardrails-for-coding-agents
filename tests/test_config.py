@@ -1,14 +1,7 @@
 import pytest
+from conftest import FAKE_DSN
 
 from phi_guardrails.config import DatabaseConfig, load_config
-
-FAKE_DSN = "postgresql://human001:fake-human-password@localhost:5432/claims_db"
-
-
-@pytest.fixture
-def cfg() -> DatabaseConfig:
-    """Config with a fake DSN; never connects anywhere."""
-    return DatabaseConfig(dsn=FAKE_DSN)
 
 
 def test_dsn_passthrough(cfg: DatabaseConfig):
