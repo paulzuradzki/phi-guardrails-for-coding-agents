@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import csv
+import logging
 import sys
 import zipfile
 from pathlib import Path
@@ -14,6 +15,8 @@ from pathlib import Path
 import requests
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+log = logging.getLogger(__name__)
 
 DATASETS = {
     "beneficiary": {
@@ -40,9 +43,9 @@ DATASETS = {
 def download(url: str, dest: Path) -> None:
     """Stream a URL to dest, skipping if already present."""
     if dest.exists():
-        print(f"  exists: {dest.name} (skipping download)")
+        log.info("exists: %s (skipping download)", dest.name)
         return
-    print(f"  downloading {url}")
+    log.info("downloading %s", url)
     with requests.get(url, stream=True, timeout=120) as resp:
         resp.raise_for_status()
         with dest.open("wb") as f:
@@ -53,7 +56,7 @@ def download(url: str, dest: Path) -> None:
 def extract(zip_path: Path, csv_path: Path) -> None:
     """Extract the single CSV inside the zip to csv_path."""
     if csv_path.exists():
-        print(f"  exists: {csv_path.name} (skipping extraction)")
+        log.info("exists: %s (skipping extraction)", csv_path.name)
         return
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
@@ -62,7 +65,7 @@ def extract(zip_path: Path, csv_path: Path) -> None:
             raise ValueError(f"expected exactly one CSV in {zip_path}, got {names}")
         with zf.open(csv_names[0]) as src, csv_path.open("wb") as dst:
             dst.write(src.read())
-    print(f"  extracted: {csv_path.name}")
+    log.info("extracted: %s", csv_path.name)
 
 
 def row_count(csv_path: Path) -> int:
@@ -74,21 +77,22 @@ def fetch_all(data_dir: Path = DATA_DIR) -> dict[str, Path]:
     data_dir.mkdir(parents=True, exist_ok=True)
     out: dict[str, Path] = {}
     for name, ds in DATASETS.items():
-        print(f"[{name}]")
+        log.info("[%s]", name)
         zip_path = data_dir / ds["zip"]
         csv_path = data_dir / ds["csv"]
         download(ds["url"], zip_path)
         extract(zip_path, csv_path)
-        print(f"  rows: {row_count(csv_path)}")
+        log.info("rows: %d", row_count(csv_path))
         out[name] = csv_path
     return out
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     paths = fetch_all()
-    print("\nDone. CSVs in data/:")
+    log.info("Done. CSVs in data/:")
     for name, p in paths.items():
-        print(f"  {name}: {p}")
+        log.info("  %s: %s", name, p)
     return 0
 
 
