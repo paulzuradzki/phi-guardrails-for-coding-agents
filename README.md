@@ -58,7 +58,8 @@ CSV headers).
 ## Development
 
 ```bash
-uv run pytest              # unit tests (no live DB needed)
+uv run pytest              # tests; DB-backed ones use claims_test and auto-skip when Postgres is down
+just db-init-test          # one-off: create claims_test on a container started before it existed
 uv run ruff check src tests
 ```
 

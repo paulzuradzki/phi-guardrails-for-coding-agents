@@ -11,8 +11,9 @@ sensitive anyway: it is gitignored and must never be committed.
   - `db.py`: psycopg connection helper (role comes from `.env`)
   - `fetch.py`: download + extract the CMS sample zips into `data/`
   - `load.py`: bulk-load CSVs into Postgres via Polars
-- `tests/`: pytest unit tests (no live DB required)
+- `tests/`: pytest; unit tests plus a few integration tests against the local DB
 - `scripts/init/`: SQL run once by the Postgres container on first start
+  (roles, schema, and the `claims_test` DB used only by the test suite)
 - `docker-compose.yml`: Postgres 16 with `claims_db`, human + agent roles
 - `justfile`: helper commands
 - `notebooks/dev.ipynb`: raw-SQL exploration notebook
@@ -32,6 +33,7 @@ just format              # ruff format
 just db-up               # start Postgres (creates DB, roles, schema on first run)
 just db-down             # stop Postgres
 just db-reset            # stop + wipe volume
+just db-init-test        # create claims_test on a running container (idempotent)
 just fetch               # download + extract CSVs into data/
 just load                # load CSVs (append)
 just load-fresh          # TRUNCATE + load
@@ -61,6 +63,9 @@ just db-counts           # row counts for both tables
   `notebooks/dev.ipynb` must be committed with **empty outputs** only.
 - If data or credentials ever land in git history, treat them as exposed:
   rotate credentials and purge history before pushing.
+- Never commit personal file paths (e.g. `/Users/<name>/...`) or personal
+  names into code, docs, or notebooks. Use env vars or config for anything
+  machine-specific.
 
 ## Conventions
 
@@ -69,4 +74,14 @@ just db-counts           # row counts for both tables
 - Keep things simple: stdlib + psycopg + polars + python-dotenv. No ORM.
 - Column names in `scripts/init/02-create-schema.sql` are the lowercased CSV
   headers; keep them in sync if the schema changes.
-- New code needs unit tests. Tests must not require a running Postgres.
+- New code needs unit tests. Unit tests must not require a running Postgres.
+- Integration tests that need a real DB use the `db` fixture in
+  `tests/conftest.py`. It connects to `claims_test` only (never `claims_db`),
+  auto-skips when Postgres is down, and rolls back on teardown, so tests may
+  freely TRUNCATE/INSERT into the real tables there. Stick to the DB-API
+  surface (`cursor()`, `execute()`, `fetchall()`, `row["col"]`) so the fixture
+  could be pointed at sqlite later. On a container created before
+  `03-create-test-db.sql` existed, run `just db-init-test` once.
+- `load_table` writes over the connection it is given. Never open a second
+  connection inside a helper; an uncommitted lock on the first will hang it.
+- `pytest-timeout` caps every test at 30s so a hang fails instead of freezing.
