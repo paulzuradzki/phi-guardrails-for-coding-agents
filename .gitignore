@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Downloaded / derived data — never commit PHI-adjacent files
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+uv.lock.bak
+
+# Misc
+.DS_Store
