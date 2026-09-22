@@ -1,5 +1,11 @@
 # Workspace Split and Schema-Aware Detection Implementation Plan
 
+> ⚠️ **DRAFT — NOT YET REVIEWED OR APPROVED.**
+> This plan was generated from the design spec and has not had a human
+> review pass. Do not begin execution until the repository owner has read
+> it and approved. Treat every task, test, and code block as a proposal.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Convert the repo to a `uv` workspace and build schema-aware PHI detection that works on plain strings in a notebook, with no proxy and no database.
