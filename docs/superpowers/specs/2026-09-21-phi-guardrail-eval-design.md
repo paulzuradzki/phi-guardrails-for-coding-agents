@@ -1,6 +1,6 @@
 # PHI guardrail evaluation: design and plan
 
-Date: 2026-09-21 (rev 4: 2026-09-22)
+Date: 2026-09-21 (rev 5: 2026-09-22)
 Status: draft for review
 Repo: phi-guardrails
 
@@ -17,11 +17,13 @@ its own schema can match those columns deterministically. So two questions:
 
 1. How much leaves out of the box?
 2. A deterministic catalog matcher should catch literal cases and fail on
-   aliased columns, hashed values, and identifiers in prose. Does an LLM
-   judge given the same catalog catch those, at a latency worth paying?
+   aliased columns, hashed values, and identifiers in prose. Does a
+   self-hostable small model given the same catalog catch those, at a
+   latency worth paying?
 
 The second question is the experiment. The deterministic matcher is the
 production baseline a real deployment would reach for first, not a strawman.
+"Self-hostable" is load-bearing and is argued below.
 
 **Who we are keeping PHI from.** The agent's inference provider, whoever
 operates it. The boundary is where the agent's model runs.
@@ -35,6 +37,23 @@ operates it. The boundary is where the agent's model runs.
 Both harnesses are Node processes, which determines the proxy CA setup. The
 vendored capture addon already parses both body styles, so all three
 configurations are one code path.
+
+**The trust boundary, and what it costs.** Every detector in the deployable
+set must run inside it. This is a correctness requirement, not a preference:
+a guardrail that ships PHI to a third party to ask whether it is PHI has no
+purpose. The guardrail is sound only where that assumption holds, and a
+deployment that cannot host its own detectors cannot use this design.
+
+The constraint binds hardest on the LLM judge, and it sets the bar at a small
+language model that fits alongside everything else on a 16 GB machine. So the
+experiment's real question is not whether *an* LLM with the catalog beats a
+deterministic matcher, but whether a *self-hostable* one does. A frontier
+model almost certainly would, and would be undeployable here. §6 covers
+sizing, and the eval measures the gap rather than assuming it away.
+
+The other detectors are already inside the boundary: `CatalogDetector` is
+pure Python, Presidio and Privacy Filter run in-process, and OpenGuardrails
+is open-weight.
 
 **What this is not.** A PHI reduction control on an outbound channel, not a
 de-identification method. Safe Harbor (45 CFR 164.514(b)(2)) requires removal
@@ -265,11 +284,12 @@ know, and the eval shows that as a gap rather than papering over it.
 - **`OpenGuardrailsDetector`** — safety model over an OpenAI-compatible
   endpoint; `S11 Privacy invasion` maps to one `privacy` finding. Baseline
   for "a safety classifier alone". Skips with a clear message if unserved.
-- **`LLMJudge(rubric="generic")`** — instruct model, system prompt with the
-  18 Safe Harbor identifiers and the decision rules, JSON verdict. No schema
-  knowledge.
+- **`LLMJudge(rubric="generic")`** — self-hostable SLM, system prompt with
+  the 18 Safe Harbor identifiers and the decision rules, JSON verdict. No
+  schema knowledge.
 - **`LLMJudge(rubric="schema")`** — same plus the catalog. The thing being
-  demonstrated.
+  demonstrated. Optionally re-run against `JUDGE_REFERENCE_MODEL` for a
+  non-deployable ceiling row; see §6.
 - **`GlinerDetector`** — optional follow-on, see §7.
 
 Judge prompt shape:
@@ -369,6 +389,11 @@ no-identifier aggregate family, since a guardrail that blocks
 `COUNT(*) GROUP BY sp_state_code` is unusable; parse-failure rate; latency
 p50 and p95.
 
+Two derived numbers carry the argument. The **SLM-minus-catalog** delta on
+the obfuscated family answers whether the judge earns its latency. The
+**SLM-minus-reference** delta, when the reference run is enabled, says
+whether the remaining errors are capability-bound or rubric-bound.
+
 **End-to-end, the headline.** Run ~10 analyst-style prompts through the
 capture-only proxy and count outbound requests carrying any labelled
 identifier value. Repeat with the guard addon in `mask` then `block`. Report
@@ -384,7 +409,8 @@ of any detector. Detectors are scored offline; the headline number is not.
 | Variable | Used by |
 |---|---|
 | `DATABASE_URL` | dev fixture, corpus builder |
-| `JUDGE_BASE_URL`, `JUDGE_API_KEY`, `JUDGE_MODEL` | LLM judge |
+| `JUDGE_BASE_URL`, `JUDGE_API_KEY`, `JUDGE_MODEL` | LLM judge (deployable) |
+| `JUDGE_REFERENCE_MODEL` | optional ceiling run, corpus only |
 | `OPENGUARD_BASE_URL`, `OPENGUARD_API_KEY`, `OPENGUARD_MODEL` | OpenGuardrails baseline |
 
 Both model endpoints are OpenAI-compatible. Anything speaking that API works:
@@ -393,11 +419,27 @@ at a self-hosted gateway; no code knows that. The judge and the safety
 classifier get separate settings because they are different kinds of model
 and need not live in the same place.
 
-**Judge sizing.** The judge is a general instruct model, not a small
-classifier. Deciding whether an aliased column or a hashed value is still an
-identifier is reasoning work. Size it for that and let latency appear in the
-report; `CatalogDetector` is already the low-latency option, so there is no
-reason to cripple the judge to compete with it.
+**Judge sizing.** The deployable judge is a small language model that fits on
+a 16 GB machine, which in practice means the 4B-8B class at Q4-Q8 once the
+OS, Postgres, and any in-process torch detector have taken their share. It is
+a general instruct model rather than a fine-tuned classifier, because
+deciding whether an aliased column or a hashed value is still an identifier
+is reasoning work. The one-to-two-sentence reasoning budget in the prompt is
+sized to what that class sustains reliably.
+
+**The reference run.** `JUDGE_REFERENCE_MODEL` optionally points at a
+frontier model and adds one row to the results table, labelled
+non-deployable. It runs against the synthetic corpus only: never on real
+data, never in the demo path, never in enforcement. Its purpose is to
+separate two failure modes that look identical from inside the SLM's
+results. If the SLM trails the frontier model badly, the approach is
+capability-bound and the answer is a bigger local model or a fine-tune. If
+both trail `CatalogDetector` on the same cases, the rubric or the catalog is
+wrong and a bigger model will not fix it.
+
+That number is also the honest thing to publish. "A 7B model recovers most of
+what a frontier model finds" is a claim someone can act on; "our LLM judge
+scored well" is not.
 
 **Runtime layout.** The whole coupling surface is `DATABASE_URL` and the two
 endpoint URLs. Nothing imports a sibling by filesystem path; nothing
@@ -445,10 +487,11 @@ format early is deliberate: it is the interface between the org's policy and
 every schema-aware detector.
 
 **Phase 2: corpus + offline eval.** Corpus builder, runner, metrics, report.
-Deliverable: the results table for noop / catalog / llm-generic / llm-schema.
-The thesis is tested here. If the LLM judge does not beat `CatalogDetector`
-on the obfuscated family, iterate on the prompt and corpus before building
-enforcement.
+Deliverable: the results table for noop / catalog / llm-generic / llm-schema,
+plus the optional reference row. The thesis is tested here. If the SLM judge
+does not beat `CatalogDetector` on the obfuscated family, the reference run
+says whether to iterate on the rubric or to record the negative result and
+proceed with the deterministic detector as the deployable answer.
 
 **Phase 3: baselines.** Presidio, then Privacy Filter, then OpenGuardrails,
 added to the same table. The per-category recall column is the payload: each
@@ -498,21 +541,32 @@ from `CatalogDetector` clearly.
    gap (Appendix A), not closed here.
 10. Guardrail models are reached over OpenAI-compatible endpoints. The
     runtime behind them is a config choice, not a design commitment.
-11. Captures are unfiltered. Judge traffic appearing in them is data to
+11. Every deployable detector runs inside the trust boundary. The judge is a
+    self-hostable SLM sized for a 16 GB machine. A frontier model appears
+    only as a corpus-only reference row, never in the demo or enforcement
+    path.
+12. Captures are unfiltered. Judge traffic appearing in them is data to
     report; the corpus is synthetic.
-12. `uv` workspace, four packages, one-way dependencies. `phi-guard` depends
+13. `uv` workspace, four packages, one-way dependencies. `phi-guard` depends
     on nothing in the workspace.
-13. Schema awareness is a committed catalog, not live introspection.
+14. Schema awareness is a committed catalog, not live introspection.
     Introspection is an authoring aid only.
-14. Detector hello-world in `notebooks/guardrails.ipynb` precedes all
+15. Detector hello-world in `notebooks/guardrails.ipynb` precedes all
     corpus, proxy, and enforcement work.
 
 ## 9. Risks and open questions
 
-- **Judge quality.** JSON output and advisory reasoning may be inconsistent.
-  Mitigation: strict parsing, fail-closed default, parse-failure rate in the
-  report, reasoning before JSON. Try a larger model before changing the
-  design.
+- **Judge quality at SLM scale.** A 4B-8B model may be inconsistent on JSON
+  output or on advisory reasoning. Mitigation: strict parsing, fail-closed
+  default, parse-failure rate in the report, reasoning before JSON. The
+  reference run says whether a larger model would help before anyone spends
+  time on the rubric.
+- **The SLM may simply not clear the bar.** If it does not beat
+  `CatalogDetector` on the obfuscated family while the reference model does,
+  that is the project's finding, not a failure of it: on this hardware
+  budget, the deployable answer is the deterministic matcher, and the LLM
+  judge needs either more local capacity or a fine-tune. Reporting that is
+  more useful than reporting a frontier score nobody can deploy.
 - **Catalog quality.** `CatalogDetector` is exactly as good as the YAML, and
   so is the schema rubric. A missing column is a silent miss for both. The
   eval includes unannotated-column cases so the gap is measured rather than
